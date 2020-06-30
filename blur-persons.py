@@ -24,12 +24,10 @@ import numpy as np
 
 from PIL import Image, ImageDraw, ImageFilter
 
-#import tensorflow as tf
 import tensorflow.compat.v1 as tf
 if tf.__version__ < '1.5.0':
     raise ImportError('Please upgrade your tensorflow installation to v1.5.0 or newer!')
 
-DEFAULT_BACKGROUND = os.path.join(os.path.dirname(__file__), "background.png")
 
 COCO_LABEL_NAMES = [
     'background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle',
@@ -223,9 +221,18 @@ def blur_from_model_and_colormap(original_image, model, colormap, dezoom=1.0):
             new_image.paste(blurred_im.crop((x1,y1, x2,y2)), (x1,y1), segmentation_mask)
     return new_image
 
+def get_image_quality(image_path, default=None):
+    try:
+        for line in subprocess.check_output(["identify", "-verbose", image_path]).decode().splitlines():
+            if line.strip().lower().startswith("quality:"):
+                return int(line.split(":")[1])
+    except:
+        pass
+    return default
 
 
-def blur_persons_in_files(files, dest, suffix, dezoom):
+
+def blur_persons_in_files(files, dest, suffix, dezoom, quality):
 
     config = MODEL_CONFIGS["xception_coco_voctrainval"]
 
@@ -251,7 +258,8 @@ def blur_persons_in_files(files, dest, suffix, dezoom):
         print(filename, "->", new_filename)
         original_image = Image.open(filename)
         new_image = blur_from_model_and_colormap(original_image, model, person_colormap, dezoom)
-        save_and_copy_exif(new_image, filename, new_filename, quality=100)
+        this_quality = get_image_quality(filename, "maximum") if quality is None else quality
+        save_and_copy_exif(original_image, filename, new_filename, quality=this_quality)
 
 def check_dir(name):
     assert os.path.isdir(name)
@@ -266,14 +274,22 @@ def main(args):
         help="destination directory for modiffied image")
     parser.add_argument("-z", "--dezoom", type=float, default=1.0,
         help="dezoom factor (e.g. 2.0) for faster search in smaller image (default=1 for search at original resolution)")
+    parser.add_argument("-q", "--quality",
+        help="quality option of saved images (e.g. 75 or maximum)")
     parser.add_argument("input", nargs="+")
     options = parser.parse_args(args[1:])
     if options.dest is None and options.suffix is None:
         options.suffix = "-blurred"
+    if options.quality is not None:
+        try:
+            options.quality=int(options.quality)
+        except:
+            pass
     blur_persons_in_files(files=options.input,
                           dest=options.dest,
                           suffix=options.suffix,
-                          dezoom=options.dezoom)
+                          dezoom=options.dezoom,
+                          quality=options.quality)
 
 if __name__ == '__main__':
     main(sys.argv)
