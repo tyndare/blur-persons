@@ -259,7 +259,7 @@ def blur_persons_in_files(files, dest, suffix, dezoom, quality):
         original_image = Image.open(filename)
         new_image = blur_from_model_and_colormap(original_image, model, person_colormap, dezoom)
         this_quality = get_image_quality(filename, "maximum") if quality is None else quality
-        save_and_copy_exif(original_image, filename, new_filename, quality=this_quality)
+        save_and_copy_exif(new_image, filename, new_filename, quality=this_quality)
 
 def check_dir(name):
     assert os.path.isdir(name)
