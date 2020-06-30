@@ -190,15 +190,15 @@ def iter_image_sub_boxes(image_width, image_height, box_size, is_360=None, overl
         for result in split_area(image_width, image_height, box_size, box_size, is_360, overlap_factor):
             yield result
 
-def blur_from_model_and_colormap(original_image, model, colormap, dezoom=1.0):
+def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1.0):
     width, height = original_image.size
     is_360 = (width == (2 * height))
-    blurred_im = original_image.filter(ImageFilter.GaussianBlur(radius=50))
+    blurred_im = original_image.filter(ImageFilter.GaussianBlur(radius=blur))
     new_image = original_image.copy()
     for x1,y1,x2,y2 in iter_image_sub_boxes(width, height, int(model.INPUT_SIZE*dezoom)):
         extract_width = x2-x1
         extract_height = y2-y1
-        print("search persons in box", (x1,y1,x2,y2), "size %dx%d" % (extract_width , extract_height))
+        print("search in box", (x1,y1,x2,y2), "size %dx%d" % (extract_width , extract_height))
         if x2 >= width and is_360:
             # The (x1,y1,x2,y2) box wrap from the far right of the image back to
             # the left (360° image), so we need to take to boxes, one on the
@@ -232,10 +232,7 @@ def get_image_quality(image_path, default=None):
 
 
 
-def blur_persons_in_files(files, dest, suffix, dezoom, quality):
-
-    config = MODEL_CONFIGS["xception_coco_voctrainval"]
-
+def blur_in_files(files, config, classes, blur, dest, suffix, dezoom, quality):
     tarball_name = os.path.basename(config.url)
     model_dir = os.path.join(os.path.dirname(__file__), config.name) # or tempfile.mkdtemp()
     tf.gfile.MakeDirs(model_dir)
@@ -248,16 +245,16 @@ def blur_persons_in_files(files, dest, suffix, dezoom, quality):
     print("load model", download_path)
     model = DeepLabModel(download_path)
 
-    PERSON_IDX = config.label_names.index("person")
-
-    person_colormap = np.zeros((512,4), dtype=int)
-    person_colormap[PERSON_IDX] = (255,255,255,255)
+    blur_colormap = np.zeros((512,4), dtype=int)
+    for clazz in classes:
+        index = config.label_names.index(clazz)
+        blur_colormap[index] = (255,255,255,255)
 
     for filename in files:
         new_filename=  get_new_filename(filename, suffix, dest)
         print(filename, "->", new_filename)
         original_image = Image.open(filename)
-        new_image = blur_from_model_and_colormap(original_image, model, person_colormap, dezoom)
+        new_image = blur_from_model_and_colormap(original_image, model, blur_colormap, blur, dezoom)
         this_quality = get_image_quality(filename, "maximum") if quality is None else quality
         save_and_copy_exif(new_image, filename, new_filename, quality=this_quality)
 
@@ -265,7 +262,15 @@ def check_dir(name):
     assert os.path.isdir(name)
     return name
 
+def may_be_int(value):
+    try:
+        return int(value)
+    except:
+        pass
+    return value
+
 def main(args):
+    config = MODEL_CONFIGS["xception_coco_voctrainval"]
     parser = argparse.ArgumentParser(
         description="Blur persons from photos.")
     parser.add_argument("-s", "--suffix", default=None,
@@ -274,18 +279,24 @@ def main(args):
         help="destination directory for modiffied image")
     parser.add_argument("-z", "--dezoom", type=float, default=1.0,
         help="dezoom factor (e.g. 2.0) for faster search in smaller image (default=1 for search at original resolution)")
-    parser.add_argument("-q", "--quality",
+    parser.add_argument("-q", "--quality", type=may_be_int,
         help="quality option of saved images (e.g. 75 or maximum)")
+    parser.add_argument("-b", "--blur", default=30, type=int,
+        help="blur radius in pixel")
+    parser.add_argument("-c", "--class", action="append",
+        choices=config.label_names,
+        help="add a class of items to blur (the default is 'person' if no class is specified)")
     parser.add_argument("input", nargs="+")
     options = parser.parse_args(args[1:])
     if options.dest is None and options.suffix is None:
         options.suffix = "-blurred"
-    if options.quality is not None:
-        try:
-            options.quality=int(options.quality)
-        except:
-            pass
-    blur_persons_in_files(files=options.input,
+    classes = getattr(options, "class")
+    if classes is None:
+        classes = ["person"]
+    blur_in_files(files=options.input,
+                          config=config,
+                          classes=classes,
+                          blur=options.blur,
                           dest=options.dest,
                           suffix=options.suffix,
                           dezoom=options.dezoom,
