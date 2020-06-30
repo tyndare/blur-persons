@@ -22,7 +22,7 @@ import collections
 
 import numpy as np
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageColor
 
 import tensorflow.compat.v1 as tf
 if tf.__version__ < '1.5.0':
@@ -193,7 +193,10 @@ def iter_image_sub_boxes(image_width, image_height, box_size, is_360=None, overl
 def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1.0):
     width, height = original_image.size
     is_360 = (width == (2 * height))
-    blurred_im = original_image.filter(ImageFilter.GaussianBlur(radius=blur))
+    if type(blur) is int:
+        blurred_im = original_image.filter(ImageFilter.GaussianBlur(radius=blur))
+    else:
+        blurred_im = Image.new('RGB', original_image.size, color=blur)
     new_image = original_image.copy()
     for x1,y1,x2,y2 in iter_image_sub_boxes(width, height, int(model.INPUT_SIZE*dezoom)):
         extract_width = x2-x1
@@ -269,6 +272,13 @@ def may_be_int(value):
         pass
     return value
 
+def int_or_color(value):
+    try:
+        return int(value)
+    except:
+        pass
+    return ImageColor.getrgb(value)
+
 def main(args):
     config = MODEL_CONFIGS["xception_coco_voctrainval"]
     parser = argparse.ArgumentParser(
@@ -281,8 +291,8 @@ def main(args):
         help="dezoom factor (e.g. 2.0) for faster search in smaller image (default=1 for search at original resolution)")
     parser.add_argument("-q", "--quality", type=may_be_int,
         help="quality option of saved images (e.g. 75 or maximum)")
-    parser.add_argument("-b", "--blur", default=30, type=int,
-        help="blur radius in pixel")
+    parser.add_argument("-b", "--blur", default=30, type=int_or_color,
+        help="blur radius in pixel, or a color name or #RGB")
     parser.add_argument("-c", "--class", action="append",
         choices=config.label_names,
         help="add a class of items to blur (the default is 'person' if no class is specified)")
@@ -294,13 +304,13 @@ def main(args):
     if classes is None:
         classes = ["person"]
     blur_in_files(files=options.input,
-                          config=config,
-                          classes=classes,
-                          blur=options.blur,
-                          dest=options.dest,
-                          suffix=options.suffix,
-                          dezoom=options.dezoom,
-                          quality=options.quality)
+                  config=config,
+                  classes=classes,
+                  blur=options.blur,
+                  dest=options.dest,
+                  suffix=options.suffix,
+                  dezoom=options.dezoom,
+                  quality=options.quality)
 
 if __name__ == '__main__':
     main(sys.argv)
