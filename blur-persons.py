@@ -164,8 +164,8 @@ def split_area(area_width, area_height, box_width, box_height, is_360=None, over
     if is_360 is None:
         is_360 = (area_width == (2 * area_height))
     real_area_width = (area_width + box_width*overlap_factor) if is_360 else area_width
-    nb_x = math.ceil(real_area_width / (box_width - overlap_factor*box_width))
-    nb_y = math.ceil(area_height / (box_height - overlap_factor*box_height))
+    nb_x = math.ceil(real_area_width / (box_width - overlap_factor*box_width)) if real_area_width > box_width else 1
+    nb_y = math.ceil(area_height / (box_height - overlap_factor*box_height)) if area_height > box_height else 1
     if nb_x > 1:
         factor_width = (real_area_width - box_width) / (box_width * (nb_x - 1))
     else:
