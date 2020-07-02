@@ -88,7 +88,7 @@ class DeepLabModel(object):
     FROZEN_GRAPH_NAME = 'frozen_inference_graph'
     INPUT_TENSOR_NAME = 'ImageTensor:0'
     OUTPUT_TENSOR_NAME = 'SemanticPredictions:0'
-    INPUT_SIZE = 512
+    INPUT_SIZE = 513
 
     def __init__(self, tarball_path):
         """Creates and loads pretrained deeplab model."""
@@ -165,7 +165,11 @@ def split_area(area_width, area_height, box_width, box_height, is_360=None, over
         is_360 = (area_width == (2 * area_height))
     real_area_width = (area_width + box_width*overlap_factor) if is_360 else area_width
     nb_x = math.ceil(real_area_width / (box_width - overlap_factor*box_width)) if real_area_width > box_width else 1
+    while (nb_x > 2) and ((box_width*(1.0-overlap_factor)*(nb_x-2) + box_width) > real_area_width):
+        nb_x = nb_x - 1
     nb_y = math.ceil(area_height / (box_height - overlap_factor*box_height)) if area_height > box_height else 1
+    while (nb_y > 2) and ((box_height*(1.0-overlap_factor)*(nb_y-2) + box_height) > area_height):
+        nb_y = nb_y - 1
     if nb_x > 1:
         factor_width = (real_area_width - box_width) / (box_width * (nb_x - 1))
     else:
@@ -281,6 +285,8 @@ def int_or_color(value):
     return ImageColor.getrgb(value)
 
 def main(args):
+    model="xception_coco_voctrainval"
+    config=MODEL_CONFIGS[model]
     parser = argparse.ArgumentParser(
         description="Blur persons from photos.")
     parser.add_argument("-s", "--suffix", default=None,
@@ -292,7 +298,7 @@ def main(args):
     parser.add_argument("-q", "--quality", type=may_be_int,
         help="quality option of saved images (e.g. 75 or maximum)")
     parser.add_argument("-b", "--blur", default=30, type=int_or_color,
-        help="blur radius in pixel, or a color name or #RGB")
+        help="blur radius in pixel, or a flat color name or #RGB")
     parser.add_argument("-c", "--class", action="append",
         choices=config.label_names,
         help="add a class of items to blur (the default is 'person' if no class is specified)")
@@ -304,7 +310,7 @@ def main(args):
     if classes is None:
         classes = ["person"]
     blur_in_files(files=options.input,
-                  model="xception_coco_voctrainval",
+                  model=model,
                   classes=classes,
                   blur=options.blur,
                   dest=options.dest,
