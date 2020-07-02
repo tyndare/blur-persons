@@ -235,7 +235,8 @@ def get_image_quality(image_path, default=None):
 
 
 
-def blur_in_files(files, config, classes, blur, dest, suffix, dezoom, quality):
+def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality):
+    config = MODEL_CONFIGS[model]
     tarball_name = os.path.basename(config.url)
     model_dir = os.path.join(os.path.dirname(__file__), config.name) # or tempfile.mkdtemp()
     tf.gfile.MakeDirs(model_dir)
@@ -280,7 +281,6 @@ def int_or_color(value):
     return ImageColor.getrgb(value)
 
 def main(args):
-    config = MODEL_CONFIGS["xception_coco_voctrainval"]
     parser = argparse.ArgumentParser(
         description="Blur persons from photos.")
     parser.add_argument("-s", "--suffix", default=None,
@@ -304,7 +304,7 @@ def main(args):
     if classes is None:
         classes = ["person"]
     blur_in_files(files=options.input,
-                  config=config,
+                  model="xception_coco_voctrainval",
                   classes=classes,
                   blur=options.blur,
                   dest=options.dest,
