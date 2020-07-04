@@ -194,14 +194,17 @@ def iter_image_sub_boxes(image_width, image_height, box_size, is_360=None, overl
         for result in split_area(image_width, image_height, box_size, box_size, is_360, overlap_factor):
             yield result
 
-def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1.0):
+def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1.0, mask=False):
     width, height = original_image.size
     is_360 = (width == (2 * height))
     if type(blur) is int:
         blurred_im = original_image.filter(ImageFilter.GaussianBlur(radius=blur))
     else:
         blurred_im = Image.new('RGB', original_image.size, color=blur)
-    new_image = original_image.copy()
+    if mask:
+        new_image = Image.new('RGB', original_image.size, color='black')
+    else:
+        new_image = original_image.copy()
     for x1,y1,x2,y2 in iter_image_sub_boxes(width, height, int(model.INPUT_SIZE*dezoom)):
         extract_width = x2-x1
         extract_height = y2-y1
@@ -220,12 +223,14 @@ def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1
         else:
             extract_image = original_image.crop((x1,y1, x2,y2))
         resized_im, segmentation_map = model.run(extract_image)
-        segmentation_mask = Image.fromarray(np.uint8(colormap[segmentation_map])).resize((x2-x1, y2-y1), Image.ANTIALIAS)
+        segmentation_mask = Image.fromarray(np.uint8(colormap[segmentation_map])).resize((x2-x1, y2-y1), Image.NEAREST if mask else Image.ANTIALIAS)
         if x2 >= width and is_360:
             new_image.paste(blurred_im.crop((x1,y1, x2_1,y2)), (x1,y1), segmentation_mask.crop((0,0, extract_width_1, extract_height)))
             new_image.paste(blurred_im.crop((0,y1, x2_2,y2)), (0,y1), segmentation_mask.crop((extract_width_1,0, extract_width, extract_height)))
         else:
             new_image.paste(blurred_im.crop((x1,y1, x2,y2)), (x1,y1), segmentation_mask)
+    if mask:
+        new_image = new_image.convert("1")
     return new_image
 
 def get_image_quality(image_path, default=None):
@@ -239,7 +244,7 @@ def get_image_quality(image_path, default=None):
 
 
 
-def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality):
+def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality, mask):
     config = MODEL_CONFIGS[model]
     tarball_name = os.path.basename(config.url)
     model_dir = os.path.join(os.path.dirname(__file__), config.name) # or tempfile.mkdtemp()
@@ -259,12 +264,17 @@ def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality):
         blur_colormap[index] = (255,255,255,255)
 
     for filename in files:
-        new_filename=  get_new_filename(filename, suffix, dest)
+        new_filename = get_new_filename(filename, suffix, dest)
+        if mask:
+            new_filename = new_filename.rsplit('.', 1)[0] + '.png'
         print(filename, "->", new_filename)
         original_image = Image.open(filename)
-        new_image = blur_from_model_and_colormap(original_image, model, blur_colormap, blur, dezoom)
-        this_quality = get_image_quality(filename, "maximum") if quality is None else quality
-        save_and_copy_exif(new_image, filename, new_filename, quality=this_quality)
+        new_image = blur_from_model_and_colormap(original_image, model, blur_colormap, blur, dezoom, mask)
+        if mask:
+            new_image.save(new_filename)
+        else:
+            this_quality = get_image_quality(filename, "maximum") if quality is None else quality
+            save_and_copy_exif(new_image, filename, new_filename, quality=this_quality)
 
 def check_dir(name):
     assert os.path.isdir(name)
@@ -302,6 +312,8 @@ def main(args):
     parser.add_argument("-c", "--class", action="append",
         choices=config.label_names,
         help="add a class of items to blur (the default is 'person' if no class is specified)")
+    parser.add_argument("-m", "--mask", action="store_true",
+        help="Save the mask inside of blur")
     parser.add_argument("input", nargs="+")
     options = parser.parse_args(args[1:])
     if options.dest is None and options.suffix is None:
@@ -309,6 +321,8 @@ def main(args):
     classes = getattr(options, "class")
     if classes is None:
         classes = ["person"]
+    if mask:
+        options.blur = 'white'
     blur_in_files(files=options.input,
                   model=model,
                   classes=classes,
@@ -316,7 +330,8 @@ def main(args):
                   dest=options.dest,
                   suffix=options.suffix,
                   dezoom=options.dezoom,
-                  quality=options.quality)
+                  quality=options.quality,
+                  mask=mask)
 
 if __name__ == '__main__':
     main(sys.argv)
