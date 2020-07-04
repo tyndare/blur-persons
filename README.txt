@@ -11,4 +11,4 @@ For this you could use anaconda to create a tensorflow environment:
 And activate it
     conda activate tensorflow 
 Before executing the script:
-    ./blur-persons.py  my_image.jpg
+    ./blur_persons.py  my_image.jpg

@@ -317,11 +317,11 @@ def main(args):
     parser.add_argument("input", nargs="+")
     options = parser.parse_args(args[1:])
     if options.dest is None and options.suffix is None:
-        options.suffix = "-blurred"
+        options.suffix = "-mask" if options.mask else "-blurred"
     classes = getattr(options, "class")
     if classes is None:
         classes = ["person"]
-    if mask:
+    if options.mask:
         options.blur = 'white'
     blur_in_files(files=options.input,
                   model=model,
@@ -331,7 +331,7 @@ def main(args):
                   suffix=options.suffix,
                   dezoom=options.dezoom,
                   quality=options.quality,
-                  mask=mask)
+                  mask=options.mask)
 
 if __name__ == '__main__':
     main(sys.argv)
