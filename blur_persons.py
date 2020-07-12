@@ -113,7 +113,7 @@ class DeepLabModel(object):
 
         self.sess = tf.Session(graph=self.graph)
 
-    def run(self, image):
+    def run(self, resized_image):
         """Runs inference on a single image.
 
         Args:
@@ -123,10 +123,6 @@ class DeepLabModel(object):
             resized_image: RGB image resized from original input image.
             segmentation_map: Segmentation map of `resized_image`.
         """
-        width, height = image.size
-        resize_ratio = 1.0 * self.INPUT_SIZE / max(width, height)
-        target_size = (int(resize_ratio * width), int(resize_ratio * height))
-        resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
         batch_segmentation_map = self.sess.run(
             self.OUTPUT_TENSOR_NAME,
             feed_dict={self.INPUT_TENSOR_NAME: [np.asarray(resized_image)]})
@@ -222,7 +218,13 @@ def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1
             extract_image.paste(original_image.crop((0,y1, x2_2, y2)), (extract_width_1,0))
         else:
             extract_image = original_image.crop((x1,y1, x2,y2))
-        resized_im, segmentation_map = model.run(extract_image)
+
+        width, height = extract_image.size
+        resize_ratio = 1.0 * model.INPUT_SIZE / max(width, height)
+        target_size = (int(resize_ratio * width), int(resize_ratio * height))
+        resized_image = extract_image.convert('RGB').resize(target_size, Image.ANTIALIAS)
+
+        resized_im, segmentation_map = model.run(resized_image)
         segmentation_mask = Image.fromarray(np.uint8(colormap[segmentation_map])).resize((x2-x1, y2-y1), Image.NEAREST if mask else Image.ANTIALIAS)
         if x2 >= width and is_360:
             new_image.paste(blurred_im.crop((x1,y1, x2_1,y2)), (x1,y1), segmentation_mask.crop((0,0, extract_width_1, extract_height)))
