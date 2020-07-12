@@ -129,6 +129,68 @@ class DeepLabModel(object):
         segmentation_map = batch_segmentation_map[0]
         return resized_image, segmentation_map
 
+class LiteModel(object):
+    """Class to load TF Lite model and run inference."""
+
+    tflite = 'xception_coco_voctrainval.tflite'
+    # tflite = 'deeplabv3_257_mv_gpu.tflite'
+    # tflite = 'lite-model_deeplabv3-xception65_1_default_1.tflite'
+
+    def __init__(self):
+        self.interpreter = tf.lite.Interpreter(self.tflite)
+
+        # Load the TFLite model and allocate tensors.
+        self.interpreter.allocate_tensors()
+
+        # Get input and output tensors.
+        self.input_details = self.interpreter.get_input_details()[0]
+        self.output_details = self.interpreter.get_output_details()
+
+        self.input_size = self.input_details['shape'][2], self.input_details['shape'][1]
+        self.INPUT_SIZE = self.input_size[0]
+        print(f'Model input size {self.input_size}')
+
+    def run(self, resized_image):
+        """Runs inference on a single image.
+
+        Args:
+            image: A PIL.Image object, raw input image.
+
+        Returns:
+            resized_image: RGB image resized from original input image.
+            segmentation_map: Segmentation map of `resized_image`.
+        """
+        if resized_image.size == self.input_size:
+            analyzed_image = resized_image
+        else:
+            analyzed_image = Image.new('RGB', self.input_size, color='black')
+            analyzed_image.paste(resized_image)
+
+        input_data = np.asarray(analyzed_image)
+        input_data = np.expand_dims(input_data, 0)
+
+        scale, zero_point = self.input_details['quantization']
+        if scale == 0:
+            input_data = input_data / 127.5 - 1
+        else:
+            input_data = input_data / scale + zero_point
+        input_data = input_data.astype(self.input_details['dtype'])
+
+        self.interpreter.set_tensor(self.input_details['index'], input_data)
+
+        self.interpreter.invoke()
+
+        # The function `get_tensor()` returns a copy of the tensor data.
+        # Use `tensor()` in order to get a pointer to the tensor.
+        output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
+
+        segmentation_map = np.argmax(output_data, axis=3).astype(np.int8)
+
+        if resized_image.size != self.input_size:
+            segmentation_map = [segmentation_map[0][0:resized_image.size[0], 0:resized_image.size[1]]]
+
+        return resized_image, segmentation_map[0]
+
 def get_new_filename(filename, suffix, dest):
     new_filename = filename
     if suffix is not None:
@@ -246,7 +308,7 @@ def get_image_quality(image_path, default=None):
 
 
 
-def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality, mask):
+def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality, mask, lite):
     config = MODEL_CONFIGS[model]
     tarball_name = os.path.basename(config.url)
     model_dir = os.path.join(os.path.dirname(__file__), config.name) # or tempfile.mkdtemp()
@@ -258,7 +320,10 @@ def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality, ma
         os.rename(download_path + ".tmp", download_path)
         print('download completed!')
     print("load model", download_path)
-    model = DeepLabModel(download_path)
+    if lite:
+        model = LiteModel()
+    else:
+        model = DeepLabModel(download_path)
 
     blur_colormap = np.zeros((512,4), dtype=int)
     for clazz in classes:
@@ -316,6 +381,8 @@ def main(args):
         help="add a class of items to blur (the default is 'person' if no class is specified)")
     parser.add_argument("-m", "--mask", action="store_true",
         help="Save the mask inside of blur")
+    parser.add_argument("-l", "--lite", action="store_true",
+        help="Use Tensorflow Lite in place of Tensorflow.")
     parser.add_argument("input", nargs="+")
     options = parser.parse_args(args[1:])
     if options.dest is None and options.suffix is None:
@@ -325,15 +392,18 @@ def main(args):
         classes = ["person"]
     if options.mask:
         options.blur = 'white'
-    blur_in_files(files=options.input,
-                  model=model,
-                  classes=classes,
-                  blur=options.blur,
-                  dest=options.dest,
-                  suffix=options.suffix,
-                  dezoom=options.dezoom,
-                  quality=options.quality,
-                  mask=options.mask)
+    blur_in_files(
+        files=options.input,
+        model=model,
+        classes=classes,
+        blur=options.blur,
+        dest=options.dest,
+        suffix=options.suffix,
+        dezoom=options.dezoom,
+        quality=options.quality,
+        mask=options.mask,
+        lite=options.lite,
+    )
 
 if __name__ == '__main__':
     main(sys.argv)
