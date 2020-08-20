@@ -78,14 +78,14 @@ def convert(input, output, quantization):
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
         converter.target_spec.supported_types = [tf.float16]
 
-    elif quantization in ('i8', 'int8', 'Fi8', 'full_int8'):
+    elif quantization in ('ui8', 'uint8', 'Fui8', 'full_uint8'):
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
         converter.representative_dataset = representative_dataset_gen
 
-        if quantization in ('Fi8', 'full_int8'):
+        if quantization in ('Fui8', 'full_uint8'):
             converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-            converter.inference_input_type = tf.int8  # or tf.uint8
-            converter.inference_output_type = tf.int8  # or tf.uint8
+            converter.inference_input_type = tf.uint8  # or tf.uint8
+            converter.inference_output_type = tf.uint8  # or tf.uint8
 
     tflite_model = converter.convert()
     open(output, 'wb').write(tflite_model)
@@ -93,11 +93,15 @@ def convert(input, output, quantization):
 
 def main(args):
     parser = argparse.ArgumentParser(
-        description=f'''onvert TF1 model to TF2 Lite.
-Example: {sys.argv[0]} frozen_inference_graph.pb xception_coco_voctrainval.tflite
+        description=f'''Convert TF1 model to TF2 Lite.
+Example:
+
+{sys.argv[0]} frozen_inference_graph.pb xception_coco_voctrainval.tflite
+
+{sys.argv[0]} -q full_uint8 frozen_inference_graph.pb xception_coco_voctrainval-full_uint8.tflite
 ''')
     parser.add_argument('-q', '--quantization',
-        choices=['dr', 'dynamic_range', 'i8', 'int8', 'Fi8', 'full_int8', 'f16', 'float16'],
+        choices=['dr', 'dynamic_range', 'ui8', 'uint8', 'Fui8', 'full_uint8', 'f16', 'float16'],
         help='''Optimization Quantization
  - dr, dynamic_range: 4x smaller, 2x-3x speedup - CPU (mono-thread)
  - f16, float16: 2x smaller, GPU acceleration - CPU, GPU

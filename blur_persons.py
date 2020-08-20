@@ -12,10 +12,11 @@ import io
 import sys
 import math
 import glob
-import urllib
+import urllib.request
 import tarfile
 import os.path
 import argparse
+import platform
 import tempfile
 import subprocess
 import collections
@@ -24,9 +25,17 @@ import numpy as np
 
 from PIL import Image, ImageDraw, ImageFilter, ImageColor
 
-import tensorflow.compat.v1 as tf
-if tf.__version__ < '1.5.0':
-    raise ImportError('Please upgrade your tensorflow installation to v1.5.0 or newer!')
+try:
+    import tensorflow.compat.v1 as tf
+    if tf.__version__ < '1.5.0':
+        raise ImportError('Please upgrade your tensorflow installation to v1.5.0 or newer!')
+except:
+    print('tensorflow.compat.v1 not available')
+
+try:
+    import tflite_runtime.interpreter as tflite
+except:
+    print('tflite_runtime not available')
 
 
 COCO_LABEL_NAMES = [
@@ -129,15 +138,24 @@ class DeepLabModel(object):
         segmentation_map = batch_segmentation_map[0]
         return resized_image, segmentation_map
 
+
 class LiteModel(object):
     """Class to load TF Lite model and run inference."""
 
-    tflite = 'xception_coco_voctrainval.tflite'
-    # tflite = 'deeplabv3_257_mv_gpu.tflite'
-    # tflite = 'lite-model_deeplabv3-xception65_1_default_1.tflite'
+    EDGETPU_SHARED_LIB = {
+      'Linux': 'libedgetpu.so.1',
+      'Darwin': 'libedgetpu.1.dylib',
+      'Windows': 'edgetpu.dll'
+    }[platform.system()]
 
-    def __init__(self):
-        self.interpreter = tf.lite.Interpreter(self.tflite)
+    def __init__(self, tflite_path):
+        device = None
+        self.interpreter = tflite.Interpreter(
+            model_path=tflite_path,
+            experimental_delegates=[
+                tflite.load_delegate(self.EDGETPU_SHARED_LIB, {'device': device[0]} if device else {})
+            ]
+        )
 
         # Load the TFLite model and allocate tensors.
         self.interpreter.allocate_tensors()
@@ -169,27 +187,18 @@ class LiteModel(object):
         input_data = np.asarray(analyzed_image)
         input_data = np.expand_dims(input_data, 0)
 
-        scale, zero_point = self.input_details['quantization']
-        if scale == 0:
-            input_data = input_data / 127.5 - 1
-        else:
-            input_data = input_data / scale + zero_point
-        input_data = input_data.astype(self.input_details['dtype'])
-
         self.interpreter.set_tensor(self.input_details['index'], input_data)
-
         self.interpreter.invoke()
 
         # The function `get_tensor()` returns a copy of the tensor data.
         # Use `tensor()` in order to get a pointer to the tensor.
         output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
-
-        segmentation_map = np.argmax(output_data, axis=3).astype(np.int8)
+        segmentation_map = output_data[0]
 
         if resized_image.size != self.input_size:
-            segmentation_map = [segmentation_map[0][0:resized_image.size[0], 0:resized_image.size[1]]]
+            segmentation_map = segmentation_map[0:resized_image.size[0], 0:resized_image.size[1]]
 
-        return resized_image, segmentation_map[0]
+        return resized_image, segmentation_map
 
 def get_new_filename(filename, suffix, dest):
     new_filename = filename
@@ -310,19 +319,29 @@ def get_image_quality(image_path, default=None):
 
 def blur_in_files(files, model, classes, blur, dest, suffix, dezoom, quality, mask, lite):
     config = MODEL_CONFIGS[model]
-    tarball_name = os.path.basename(config.url)
-    model_dir = os.path.join(os.path.dirname(__file__), config.name) # or tempfile.mkdtemp()
-    tf.gfile.MakeDirs(model_dir)
-    download_path = os.path.join(model_dir, tarball_name)
-    if not os.path.exists(download_path):
-        print('downloading model to %s, this might take a while...' % download_path)
-        urllib.request.urlretrieve(config.url, download_path + ".tmp")
-        os.rename(download_path + ".tmp", download_path)
-        print('download completed!')
-    print("load model", download_path)
     if lite:
-        model = LiteModel()
+        # https://coral.ai/models/
+        url = 'https://github.com/google-coral/edgetpu/raw/master/test_data/deeplabv3_mnv2_pascal_quant_edgetpu.tflite'
+        download_path = 'deeplabv3_mnv2_pascal_quant_edgetpu.tflite'
+        if not os.path.exists(download_path):
+            print('downloading model to %s, this might take a while...' % download_path)
+            urllib.request.urlretrieve(url, download_path + ".tmp")
+            os.rename(download_path + ".tmp", download_path)
+            print('download completed!')
+
+        model = LiteModel(download_path)
     else:
+        tarball_name = os.path.basename(config.url)
+        model_dir = os.path.join(os.path.dirname(__file__), config.name) # or tempfile.mkdtemp()
+        download_path = os.path.join(model_dir, tarball_name)
+        if not os.path.exists(download_path):
+            tf.gfile.MakeDirs(model_dir)
+            print('downloading model to %s, this might take a while...' % download_path)
+            urllib.request.urlretrieve(config.url, download_path + ".tmp")
+            os.rename(download_path + ".tmp", download_path)
+            print('download completed!')
+        print("load model", download_path)
+
         model = DeepLabModel(download_path)
 
     blur_colormap = np.zeros((512,4), dtype=int)
