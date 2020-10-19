@@ -24,8 +24,10 @@ import numpy as np
 
 from PIL import Image, ImageDraw, ImageFilter, ImageColor
 
+from packaging import version 
+
 import tensorflow.compat.v1 as tf
-if tf.__version__ < '1.5.0':
+if version.parse(tf.__version__) < version.parse('1.5'):
     raise ImportError('Please upgrade your tensorflow installation to v1.5.0 or newer!')
 
 
