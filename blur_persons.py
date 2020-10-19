@@ -255,6 +255,7 @@ def iter_image_sub_boxes(image_width, image_height, box_size, is_360=None, overl
             yield result
 
 def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1.0, mask=False):
+    x2_1 = None
     width, height = original_image.size
     is_360 = (width == (2 * height))
     if type(blur) is int:
@@ -291,6 +292,12 @@ def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1
         resized_im, segmentation_map = model.run(resized_image)
         segmentation_mask = Image.fromarray(np.uint8(colormap[segmentation_map])).resize((x2-x1, y2-y1), Image.NEAREST if mask else Image.ANTIALIAS)
         if x2 >= width and is_360:
+            if x2_1 is None:
+                x2_1 = width
+                x2_2 = x2 - width
+                extract_width_1 = x2_1 - x1
+                extract_width_2 = x2_2
+
             new_image.paste(blurred_im.crop((x1,y1, x2_1,y2)), (x1,y1), segmentation_mask.crop((0,0, extract_width_1, extract_height)))
             new_image.paste(blurred_im.crop((0,y1, x2_2,y2)), (0,y1), segmentation_mask.crop((extract_width_1,0, extract_width, extract_height)))
         else:
