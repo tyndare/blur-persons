@@ -25,9 +25,11 @@ import numpy as np
 
 from PIL import Image, ImageDraw, ImageFilter, ImageColor
 
+from packaging import version
+
 try:
     import tensorflow.compat.v1 as tf
-    if tf.__version__ < '1.5.0':
+    if version.parse(tf.__version__) < version.parse('1.5'):
         raise ImportError('Please upgrade your tensorflow installation to v1.5.0 or newer!')
 except:
     print('tensorflow.compat.v1 not available')
@@ -278,8 +280,8 @@ def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1
         print("search in box", (x1,y1,x2,y2), "size %dx%d" % (extract_width , extract_height))
         if x2 >= width and is_360:
             # The (x1,y1,x2,y2) box wrap from the far right of the image back to
-            # the left (360° image), so we need to take to boxes, one on the
-            # right, on on the left:
+            # the left (360° image), so we need to take two boxes, one on the
+            # right and one on the left:
             x2_1 = width
             x2_2 = x2 - width
             extract_width_1 = x2_1 - x1
@@ -290,9 +292,9 @@ def blur_from_model_and_colormap(original_image, model, colormap, blur, dezoom=1
         else:
             extract_image = original_image.crop((x1,y1, x2,y2))
 
-        width, height = extract_image.size
-        resize_ratio = 1.0 * model.INPUT_SIZE / max(width, height)
-        target_size = (int(resize_ratio * width), int(resize_ratio * height))
+        extract_width, extract_height = extract_image.size
+        resize_ratio = 1.0 * model.INPUT_SIZE / max(extract_width, extract_height)
+        target_size = (int(resize_ratio * extract_width), int(resize_ratio * extract_height))
         resized_image = extract_image.convert('RGB').resize(target_size, Image.ANTIALIAS)
 
         resized_im, segmentation_map = model.run(resized_image)
